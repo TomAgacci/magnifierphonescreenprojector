@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mirror Projector Ray-Tracing Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 100: '#0d1117', 200: '#161b22', 300: '#1c2333', 400: '#21283b', 500: '#2d333b', 600: '#373e47', 700: '#444c56', 800: '#545d68' },
+                        neon: { blue: '#1a73e8', cyan: '#00e5ff', violet: '#7c4dff', red: '#ff1744', orange: '#ff9100', yellow: '#ffd600', green: '#00e676' },
+                        glass: { blue: '#4fc3f7', fill: 'rgba(79,195,247,0.15)' }
+                    },
+                    fontFamily: {
+                        mono: ['JetBrains Mono', 'monospace'],
+                        sans: ['Inter', 'sans-serif']
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #1c2333;
+            --bg-canvas: #0a0e1a;
+            --accent: #1a73e8;
+            --accent-hover: #1565c0;
+            --neon-cyan: #00e5ff;
+            --neon-red: #ff1744;
+            --neon-yellow: #ffd600;
+            --neon-orange: #ff9100;
+            --neon-violet: #7c4dff;
+            --neon-green: #00e676;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #545d68;
+            --glass-blue: #4fc3f7;
+            --glass-fill: rgba(79,195,247,0.15);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 0;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: 'JetBrains Mono', monospace;
+            overflow-x: hidden;
+        }
+        .slider-container { position: relative; }
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 6px;
+            background: #2d333b; border-radius: 3px; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 16px; height: 16px;
+            background: var(--accent); border-radius: 50%;
+            cursor: pointer; border: 2px solid #e6edf3;
+            transition: transform 0.15s;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px; height: 16px;
+            background: var(--accent); border-radius: 50%;
+            cursor: pointer; border: 2px solid #e6edf3;
+        }
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .readout-table td { padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+        .readout-table .label { color: var(--text-secondary); }
+        .readout-table .value { color: var(--neon-cyan); font-weight: 600; text-align: right; }
+        .preset-btn {
+            background: var(--bg-tertiary); color: var(--text-primary);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
+            padding: 6px 12px; cursor: pointer; font-family: inherit;
+            font-size: 11px; transition: all 0.2s;
+        }
+        .preset-btn:hover, .preset-btn.active { background: var(--accent); border-color: var(--accent); }
+        .toggle-btn {
+            background: var(--bg-tertiary); color: var(--text-secondary);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+            padding: 6px 12px; cursor: pointer; font-family: inherit;
+            font-size: 11px; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .toggle-btn.active { background: rgba(26,115,232,0.2); color: var(--neon-cyan); border-color: var(--accent); }
+        .reset-btn {
+            background: rgba(255,23,68,0.15); color: var(--neon-red);
+            border: 1px solid rgba(255,23,68,0.3); border-radius: 8px;
+            padding: 8px 16px; cursor: pointer; font-family: inherit;
+            font-size: 12px; font-weight: 600; width: 100%; transition: all 0.2s;
+        }
+        .reset-btn:hover { background: rgba(255,23,68,0.3); }
+        .spec-popup {
+            position: fixed; display: none; background: var(--bg-secondary);
+            border: 1px solid var(--accent); border-radius: 12px;
+            padding: 16px; z-index: 100; min-width: 220px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .spec-popup.show { display: block; }
+        .spec-popup h3 { color: var(--neon-cyan); margin: 0 0 8px; font-size: 14px; }
+        .spec-popup .row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+        .spec-popup .row .lbl { color: var(--text-secondary); }
+        .spec-popup .row .val { color: var(--text-primary); }
+        #canvas-container { position: relative; }
+        .slider-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .slider-row label { font-size: 11px; color: var(--text-secondary); min-width: 90px; flex-shrink: 0; }
+        .slider-row input[type="range"] { flex: 1; }
+        .slider-row .val-display { font-size: 12px; color: var(--neon-cyan); min-width: 55px; text-align: right; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+        @media (max-width: 900px) {
+            .main-layout { flex-direction: column !important; }
+            .canvas-panel, .control-panel { width: 100% !important; max-width: 100% !important; }
+            .control-panel { max-height: 50vh; overflow-y: auto; }
+        }
+    </style>
+</head>
+<body data-id="0" class="min-h-screen flex flex-col">
+    <app-icon data-id="1" hidden data-icon="scan-line" data-palette="Blue"></app-icon>
+
+    <header data-id="2" class="flex items-center justify-between px-4 md:px-6 py-3" style="background:var(--bg-secondary);border-bottom:1px solid rgba(255,255,255,0.06);">
+        <div data-id="3" class="flex items-center gap-3">
+            <i data-id="4" data-lucide="scan-line" class="w-5 h-5" style="color:var(--neon-cyan)"></i>
+            <h1 data-id="5" class="text-sm md:text-base font-bold tracking-wide" style="color:var(--text-primary)">Mirror Projector Ray-Tracing Engine</h1>
+        </div>
+        <div data-id="6" class="flex items-center gap-2">
+            <span data-id="7" class="text-xs hidden md:inline" style="color:var(--text-muted)">Phone → Mirror → Lens → Wall</span>
+            <i data-id="8" data-lucide="chevron-right" class="w-3 h-3 hidden md:inline" style="color:var(--text-muted)"></i>
+        </div>
+    </header>
+
+    <div data-id="9" class="main-layout flex flex-1" style="min-height:0;">
+        <div data-id="10" class="canvas-panel" style="width:65%;position:relative;">
+            <div data-id="11" id="canvas-container" style="width:100%;height:100%;position:relative;">
+                <canvas data-id="12" id="rayCanvas"></canvas>
+            </div>
+        </div>
+
+        <div data-id="13" class="control-panel" style="width:35%;background:var(--bg-primary);border-left:1px solid rgba(255,255,255,0.06);overflow-y:auto;padding:12px;">
+
+            <div data-id="14" class="card mb-3">
+                <div data-id="15" class="flex items-center gap-2 mb-3">
+                    <i data-id="16" data-lucide="sliders-horizontal" class="w-4 h-4" style="color:var(--accent)"></i>
+                    <span data-id="17" class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-secondary)">Optical Parameters</span>
+                </div>
+                <div data-id="18" class="slider-row">
+                    <label data-id="19">Mirror θ</label>
+                    <input data-id="20" type="range" id="sl-mirror-angle" min="35" max="55" value="45" step="0.5">
+                    <span data-id="21" class="val-display" id="vd-mirror-angle">45.0°</span>
+                </div>
+                <div data-id="22" class="slider-row">
+                    <label data-id="23">Phone→Mirror</label>
+                    <input data-id="24" type="range" id="sl-phone-mirror" min="100" max="250" value="160" step="1">
+                    <span data-id="25" class="val-display" id="vd-phone-mirror">160mm</span>
+                </div>
+                <div data-id="26" class="slider-row">
+                    <label data-id="27">Lens→Wall</label>
+                    <input data-id="28" type="range" id="sl-lens-wall" min="500" max="1500" value="1000" step="10">
+                    <span data-id="29" class="val-display" id="vd-lens-wall">1000mm</span>
+                </div>
+                <div data-id="30" class="slider-row">
+                    <label data-id="31">Screen W</label>
+                    <input data-id="32" type="range" id="sl-screen-width" min="80" max="140" value="114.67" step="0.01">
+                    <span data-id="33" class="val-display" id="vd-screen-width">114.67mm</span>
+                </div>
+                <div data-id="34" class="slider-row">
+                    <label data-id="35">Glass n</label>
+                    <input data-id="36" type="range" id="sl-glass-n" min="1.45" max="1.70" value="1.52" step="0.01">
+                    <span data-id="37" class="val-display" id="vd-glass-n">1.52</span>
+                </div>
+                <div data-id="38" class="slider-row">
+                    <label data-id="39">Ray Bundles</label>
+                    <input data-id="40" type="range" id="sl-ray-bundles" min="3" max="9" value="5" step="2">
+                    <span data-id="41" class="val-display" id="vd-ray-bundles">5</span>
+                </div>
+            </div>
+
+            <div data-id="42" class="card mb-3">
+                <div data-id="43" class="flex items-center gap-2 mb-3">
+                    <i data-id="44" data-lucide="smartphone" class="w-4 h-4" style="color:var(--accent)"></i>
+                    <span data-id="45" class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-secondary)">iPhone Presets</span>
+                </div>
+                <div data-id="46" class="flex gap-2 flex-wrap">
+                    <button data-id="47" class="preset-btn" id="preset-mini">mini (5.42")</button>
+                    <button data-id="48" class="preset-btn active" id="preset-standard">Standard (6.06")</button>
+                    <button data-id="49" class="preset-btn" id="preset-promax">Pro Max (6.68")</button>
+                </div>
+            </div>
+
+            <div data-id="50" class="card mb-3">
+                <div data-id="51" class="flex items-center gap-2 mb-3">
+                    <i data-id="52" data-lucide="eye" class="w-4 h-4" style="color:var(--accent)"></i>
+                    <span data-id="53" class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-secondary)">Display Options</span>
+                </div>
+                <div data-id="54" class="flex gap-2 flex-wrap">
+                    <button data-id="55" class="toggle-btn active" id="tog-envelope">
+                        <i data-id="56" data-lucide="layers" class="w-3 h-3"></i> Ray Envelope
+                    </button>
+                    <button data-id="57" class="toggle-btn" id="tog-snell">
+                        <i data-id="58" data-lucide="git-branch" class="w-3 h-3"></i> Snell Vectors
+                    </button>
+                    <button data-id="59" class="toggle-btn" id="tog-parallax">
+                        <i data-id="60" data-lucide="move" class="w-3 h-3"></i> Parallax
+                    </button>
+                </div>
+            </div>
+
+            <div data-id="61" class="card mb-3">
+                <div data-id="62" class="flex items-center gap-2 mb-3">
+                    <i data-id="63" data-lucide="table" class="w-4 h-4" style="color:var(--accent)"></i>
+                    <span data-id="64" class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-secondary)">Computed Values</span>
+                </div>
+                <table data-id="65" class="readout-table w-full">
+                    <tr data-id="66"><td data-id="67" class="label">Magnification M</td><td data-id="68" class="value" id="ro-mag">—</td></tr>
+                    <tr data-id="69"><td data-id="70" class="label">Object dist d<sub data-id="71">o</sub></td><td data-id="72" class="value" id="ro-do">—</td></tr>
+                    <tr data-id="73"><td data-id="74" class="label">Focal length f</td><td data-id="75" class="value" id="ro-f">—</td></tr>
+                    <tr data-id="76"><td data-id="77" class="label">Lens aperture Ø</td><td data-id="78" class="value" id="ro-aperture">—</td></tr>
+                    <tr data-id="79"><td data-id="80" class="label">Radius R</td><td data-id="81" class="value" id="ro-R">—</td></tr>
+                    <tr data-id="82"><td data-id="83" class="label">Center thick t</td><td data-id="84" class="value" id="ro-t">—</td></tr>
+                    <tr data-id="85"><td data-id="86" class="label">f-number</td><td data-id="87" class="value" id="ro-fnum">—</td></tr>
+                    <tr data-id="88"><td data-id="89" class="label">Mirror W×L</td><td data-id="90" class="value" id="ro-mirror">—</td></tr>
+                    <tr data-id="91"><td data-id="92" class="label">Wall image</td><td data-id="93" class="value" id="ro-wall">—</td></tr>
+                    <tr data-id="94"><td data-id="95" class="label">Mirror→Lens</td><td data-id="96" class="value" id="ro-ml">—</td></tr>
+                </table>
+            </div>
+
+            <button data-id="97" class="reset-btn" id="btn-reset">
+                <i data-id="98" data-lucide="rotate-ccw" class="w-3 h-3" style="display:inline;vertical-align:middle;margin-right:4px"></i>
+                Reset All
+            </button>
+        </div>
+    </div>
+
+    <div data-id="99" class="spec-popup" id="spec-popup">
+        <div data-id="100" class="flex items-center justify-between mb-2">
+            <h3 data-id="101" id="popup-title">Component</h3>
+            <button data-id="102" id="popup-close" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:16px;">✕</button>
+        </div>
+        <div data-id="103" id="popup-content"></div>
+    </div>
+
+    <footer data-id="104" class="py-3 text-center" style="background:var(--bg-secondary);border-top:1px solid rgba(255,255,255,0.06);">
+        <p data-id="105" class="text-xs" style="color:var(--text-muted)">Made by Copilot</p>
+    </footer>
+
+    <script>
+    if (typeof lucide !== "undefined" && typeof lucide.createIcons === "function") {
+        lucide.createIcons();
+    }
+
+    // ===== STATE =====
+    const state = {
+        mirrorAngle: 45,
+        phoneMirrorDist: 160,
+        lensWallDist: 1000,
+        screenWidth: 114.67,
+        glassN: 1.52,
+        rayBundles: 5,
+        showEnvelope: true,
+        showSnell: false,
+        showParallax: false,
+        animProgress: 1,
+        targetState: null,
+        prevState: null,
+    };
+
+    const defaults = { ...state };
+
+    // ===== CANVAS SETUP =====
+    const canvas = document.getElementById('rayCanvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, scale;
+
+    function resizeCanvas() {
+        const container = document.getElementById('canvas-container');
+        W = container.clientWidth;
+        H = container.clientHeight;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        draw();
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // ===== COMPUTED OPTICS =====
+    function computeOptics() {
+        const theta = state.mirrorAngle * Math.PI / 180;
+        const screenH = state.screenWidth * 9 / 16;
+        const screenDiag = Math.sqrt(state.screenWidth ** 2 + screenH ** 2);
+
+        // Mirror-to-lens distance: beam travels horizontally after mirror reflection
+        // For 45°, vertical distance = horizontal distance from mirror to lens
+        // For other angles, the reflected beam direction determines horizontal travel
+        // Object distance for lens = phone-mirror distance (vertical) + a folded path contribution
+        const mirrorToLens = state.phoneMirrorDist * 1.2; // reasonable optical bench spacing
+        const d_o = state.phoneMirrorDist + mirrorToLens;
+
+        const d_i = state.lensWallDist;
+        const f = (d_o * d_i) / (d_o + d_i);
+        const M = d_i / d_o;
+
+        const beamHeight = screenDiag;
+        const aperture = 1.25 * beamHeight;
+        const R = 2 * (state.glassN - 1) * f;
+
+        // Sagitta: s = R - sqrt(R² - (D/2)²)
+        const halfAp = aperture / 2;
+        let sag = 0;
+        if (R > halfAp) {
+            sag = R - Math.sqrt(R * R - halfAp * halfAp);
+        } else {
+            sag = R * 0.3;
+        }
+        const edgeThick = 2;
+        const centerThick = 2 * sag + edgeThick;
+
+        const fNumber = f / aperture;
+
+        const wallImageW = state.screenWidth * M;
+        const wallImageH = screenH * M;
+
+        // Mirror dimensions
+        const beamW = state.screenWidth * 1.1;
+        const mirrorLen = beamW / Math.cos(theta) * 1.1;
+        const mirrorW = 5;
+
+        return {
+            theta, screenH, screenDiag, mirrorToLens, d_o, d_i, f, M,
+            beamHeight, aperture, R, sag, edgeThick, centerThick, fNumber,
+            wallImageW, wallImageH, beamW, mirrorLen, mirrorW
+        };
+    }
+
+    // ===== COORDINATE MAPPING =====
+    // Canvas layout: phone at bottom-left, beam goes UP then RIGHT
+    // We define a world coordinate system in mm:
+    //   origin at phone center
+    //   x: horizontal (to the right after mirror)
+    //   y: vertical (upward from phone to mirror)
+    // Canvas mapping flips y.
+
+    function getTransform(optics) {
+        const totalHoriz = optics.mirrorToLens + optics.aperture / 2 + 80 + Math.min(state.lensWallDist * 0.3, 300);
+        const totalVert = state.phoneMirrorDist + 80;
+
+        const marginL = 100, marginR = 60, marginT = 60, marginB = 100;
+        const availW = W - marginL - marginR;
+        const availH = H - marginT - marginB;
+
+        const sx = availW / totalHoriz;
+        const sy = availH / totalVert;
+        scale = Math.min(sx, sy, 2.5);
+
+        const offsetX = marginL;
+        const offsetY = H - marginB;
+
+        return {
+            toCanvasX: (wx) => offsetX + wx * scale,
+            toCanvasY: (wy) => offsetY - wy * scale,
+            scale, offsetX, offsetY, marginL, marginR, marginT, marginB
+        };
+    }
+
+    // ===== DRAWING =====
+    function draw() {
+        if (!W || !H) return;
+        const optics = computeOptics();
+        const T = getTransform(optics);
+
+        ctx.clearRect(0, 0, W, H);
+
+        // Background
+        ctx.fillStyle = '#0a0e1a';
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid
+        drawGrid(T);
+
+        // Components
+        drawPhone(T, optics);
+        drawMirror(T, optics);
+        drawLens(T, optics);
+        drawWall(T, optics);
+
+        // Rays
+        drawRays(T, optics);
+
+        // Annotations
+        drawAnnotations(T, optics);
+
+        // Update readouts
+        updateReadouts(optics);
+    }
+
+    function drawGrid(T) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        const step = 50 * T.scale;
+        for (let x = T.offsetX % step; x < W; x += step) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+        }
+        for (let y = T.offsetY % step; y < H; y += step) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+        // Also go negative
+        for (let y = T.offsetY % step; y > 0; y -= step) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+        }
+    }
+
+    function drawPhone(T, optics) {
+        const pw = state.screenWidth * T.scale;
+        const ph = 12 * T.scale;
+        const px = T.toCanvasX(-state.screenWidth / 2);
+        const py = T.toCanvasY(0) - 2;
+
+        // Phone body
+        ctx.fillStyle = '#2d333b';
+        ctx.strokeStyle = '#545d68';
+        ctx.lineWidth = 2;
+        roundRect(ctx, px - 4, py, pw + 8, ph + 8, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        // Screen glow
+        const glow = ctx.createLinearGradient(px, py, px + pw, py);
+        glow.addColorStop(0, 'rgba(26,115,232,0.5)');
+        glow.addColorStop(0.5, 'rgba(0,229,255,0.6)');
+        glow.addColorStop(1, 'rgba(124,77,255,0.5)');
+        ctx.fillStyle = glow;
+        roundRect(ctx, px, py + 2, pw, ph, 2);
+        ctx.fill();
+
+        // Glow effect below
+        const glowGrad = ctx.createRadialGradient(T.toCanvasX(0), py + ph, 0, T.toCanvasX(0), py + ph, pw * 0.6);
+        glowGrad.addColorStop(0, 'rgba(0,229,255,0.15)');
+        glowGrad.addColorStop(1, 'rgba(0,229,255,0)');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(px - pw * 0.3, py + ph, pw * 1.6, 30);
+
+        // Label
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        ctx.fillText('PHONE SCREEN', T.toCanvasX(0), py + ph + 20);
+        ctx.fillStyle = 'rgba(0,229,255,0.6)';
+        ctx.fillText(`${state.screenWidth.toFixed(1)} × ${(state.screenWidth * 9 / 16).toFixed(1)} mm`, T.toCanvasX(0), py + ph + 32);
+    }
+
+    function drawMirror(T, optics) {
+        const theta = optics.theta;
+        const mirrorCenterX = 0;
+        const mirrorCenterY = state.phoneMirrorDist;
+        const cx = T.toCanvasX(mirrorCenterX);
+        const cy = T.toCanvasY(mirrorCenterY);
+
+        const halfLen = optics.mirrorLen / 2 * T.scale;
+
+        // Mirror line: angle theta from horizontal
+        const dx = Math.cos(theta) * halfLen;
+        const dy = Math.sin(theta) * halfLen;
+
+        // Silver gradient
+        const grad = ctx.createLinearGradient(cx - dx, cy + dy, cx + dx, cy - dy);
+        grad.addColorStop(0, '#7a8a9a');
+        grad.addColorStop(0.3, '#c0cdd8');
+        grad.addColorStop(0.5, '#e8eef3');
+        grad.addColorStop(0.7, '#c0cdd8');
+        grad.addColorStop(1, '#7a8a9a');
+
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cx - dx, cy + dy);
+        ctx.lineTo(cx + dx, cy - dy);
+        ctx.stroke();
+
+        // Hatching on back of mirror
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = 1;
+        const perpX = -Math.sin(theta);
+        const perpY = -Math.cos(theta);
+        for (let i = -0.9; i <= 0.9; i += 0.12) {
+            const bx = cx + Math.cos(theta) * halfLen * i;
+            const by = cy - Math.sin(theta) * halfLen * i;
+            ctx.beginPath();
+            ctx.moveTo(bx, by);
+            ctx.lineTo(bx + perpX * 8, by + perpY * 8);
+            ctx.stroke();
+        }
+
+        // Label
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.textAlign = 'left';
+        ctx.fillText(`MIRROR (θ=${state.mirrorAngle.toFixed(1)}°)`, cx + dx + 10, cy - dy - 5);
+    }
+
+    function drawLens(T, optics) {
+        const lensX = optics.mirrorToLens;
+        const lensY = state.phoneMirrorDist; // On optical axis after mirror reflection
+
+        // For non-45° mirror, the reflected beam direction changes
+        // The optical axis after mirror is horizontal at mirror height
+        const theta = optics.theta;
+        // Reflected ray direction for vertical input hitting mirror at angle theta:
+        // Incoming: (0, 1) going up. Mirror normal depends on theta.
+        // For a mirror tilted at theta from horizontal:
+        // normal = (-sin(theta), cos(theta)) pointing "upward-left"
+        // Actually for our geometry, mirror surface is at angle theta from horizontal
+        // surface tangent = (cos(theta), sin(theta))
+        // normal pointing toward the incoming ray: (sin(theta), -cos(theta)) rotated... 
+        // Let me think carefully:
+        // Mirror surface line at angle theta from horizontal
+        // For 45°: reflects vertical beam to horizontal (to the right)
+        // Reflected beam angle from horizontal = 2*theta - 90 degrees
+        // At 45°: 2*45-90 = 0° = horizontal ✓
+
+        const reflAngle = (2 * state.mirrorAngle - 90) * Math.PI / 180; // angle from horizontal
+
+        // Lens center position along reflected beam
+        const lcx = T.toCanvasX(lensX * Math.cos(reflAngle));
+        const lcy = T.toCanvasY(state.phoneMirrorDist + lensX * Math.sin(reflAngle));
+
+        const halfAp = optics.aperture / 2 * T.scale;
+        const R1px = optics.R * T.scale;
+
+        // Draw biconvex lens as two circular arcs
+        // Perpendicular to beam direction
+        const beamAngle = reflAngle; // angle of beam from horizontal
+        const perpAngle = beamAngle + Math.PI / 2;
+
+        const sagPx = optics.sag * T.scale;
+
+        // Front surface (left side facing beam): convex outward (toward phone/mirror)
+        // Back surface (right side): convex outward (toward wall)
+        // We draw arcs perpendicular to beam direction
+
+        // Lens oriented along beam axis
+        // Top and bottom points of aperture
+        const topX = lcx + Math.cos(perpAngle) * halfAp;
+        const topY = lcy - Math.sin(perpAngle) * halfAp;
+        const botX = lcx - Math.cos(perpAngle) * halfAp;
+        const botY = lcy + Math.sin(perpAngle) * halfAp;
+
+        // For front surface: center of curvature is to the LEFT of lens (toward mirror)
+        // Arc bulges toward mirror
+        const frontBulgeX = lcx - Math.cos(beamAngle) * sagPx;
+        const frontBulgeY = lcy + Math.sin(beamAngle) * sagPx;
+
+        // For back surface: center of curvature is to the RIGHT (toward wall)
+        const backBulgeX = lcx + Math.cos(beamAngle) * sagPx;
+        const backBulgeY = lcy - Math.sin(beamAngle) * sagPx;
+
+        // Glass fill
+        ctx.fillStyle = 'rgba(79,195,247,0.12)';
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 2;
+
+        ctx.beginPath();
+        // Front arc: from top to bottom, bulging left
+        ctx.moveTo(topX, topY);
+        ctx.quadraticCurveTo(frontBulgeX, (topY + botY) / 2 + (frontBulgeY - (topY + botY) / 2), botX, botY);
+        // Back arc: from bottom to top, bulging right
+        ctx.quadraticCurveTo(backBulgeX, (topY + botY) / 2 + (backBulgeY - (topY + botY) / 2), topX, topY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Center line
+        ctx.strokeStyle = 'rgba(0,229,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(topX, topY);
+        ctx.lineTo(botX, botY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Label
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        ctx.fillText(`LENS (f=${optics.f.toFixed(0)}mm, Ø=${optics.aperture.toFixed(0)}mm)`, lcx, topY - 14);
+        ctx.fillStyle = 'rgba(79,195,247,0.6)';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.fillText(`R=${optics.R.toFixed(0)}mm  t=${optics.centerThick.toFixed(1)}mm`, lcx, topY - 4);
+
+        return { lcx, lcy, halfAp, perpAngle, beamAngle, topX, topY, botX, botY, sagPx };
+    }
+
+    function drawWall(T, optics) {
+        const reflAngle = (2 * state.mirrorAngle - 90) * Math.PI / 180;
+        const totalDist = optics.mirrorToLens + state.lensWallDist * 0.28;
+        const wallX = T.toCanvasX(totalDist * Math.cos(reflAngle));
+        const wallY = T.toCanvasY(state.phoneMirrorDist + totalDist * Math.sin(reflAngle));
+
+        const perpAngle = reflAngle + Math.PI / 2;
+        const wallHalfH = Math.max(optics.wallImageH * 0.5 * T.scale, 40);
+
+        // Wall surface
+        const grad = ctx.createLinearGradient(
+            wallX + Math.cos(perpAngle) * wallHalfH,
+            wallY - Math.sin(perpAngle) * wallHalfH,
+            wallX - Math.cos(perpAngle) * wallHalfH,
+            wallY + Math.sin(perpAngle) * wallHalfH
+        );
+        grad.addColorStop(0, 'rgba(255,255,255,0.05)');
+        grad.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+        grad.addColorStop(1, 'rgba(255,255,255,0.05)');
+
+        ctx.strokeStyle = '#e6edf3';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(wallX + Math.cos(perpAngle) * wallHalfH, wallY - Math.sin(perpAngle) * wallHalfH);
+        ctx.lineTo(wallX - Math.cos(perpAngle) * wallHalfH, wallY + Math.sin(perpAngle) * wallHalfH);
+        ctx.stroke();
+
+        // Glow
+        const glowGrad = ctx.createRadialGradient(wallX, wallY, 0, wallX, wallY, wallHalfH * 1.5);
+        glowGrad.addColorStop(0, 'rgba(255,255,255,0.12)');
+        glowGrad.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = glowGrad;
+        ctx.fillRect(wallX - wallHalfH * 1.5, wallY - wallHalfH * 1.5, wallHalfH * 3, wallHalfH * 3);
+
+        // Image rectangle on wall
+        const imgH = optics.wallImageH * T.scale * 0.25;
+        const imgW = optics.wallImageW * T.scale * 0.25;
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(wallX - 3, wallY - imgH / 2, 6, imgH);
+        ctx.setLineDash([]);
+
+        // Label
+        ctx.fillStyle = '#8b949e';
+        ctx.font = '10px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        ctx.fillText('WALL IMAGE', wallX, wallY + wallHalfH + 18);
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.fillText(`${optics.wallImageW.toFixed(0)} × ${optics.wallImageH.toFixed(0)} mm`, wallX, wallY + wallHalfH + 30);
+
+        return { wallX, wallY, wallHalfH };
+    }
+
+    function drawRays(T, optics) {
+        const N = state.rayBundles;
+        const reflAngle = (2 * state.mirrorAngle - 90) * Math.PI / 180;
+        const theta = optics.theta;
+
+        // Lens position
+        const lensWorldX = optics.mirrorToLens * Math.cos(reflAngle);
+        const lensWorldY = state.phoneMirrorDist + optics.mirrorToLens * Math.sin(reflAngle);
+        const lcx = T.toCanvasX(lensWorldX);
+        const lcy = T.toCanvasY(lensWorldY);
+        const halfAp = optics.aperture / 2;
+
+        // Wall position (compressed for display)
+        const totalDist = optics.mirrorToLens + state.lensWallDist * 0.28;
+        const wallWorldX = totalDist * Math.cos(reflAngle);
+        const wallWorldY = state.phoneMirrorDist + totalDist * Math.sin(reflAngle);
+        const wallCx = T.toCanvasX(wallWorldX);
+        const wallCy = T.toCanvasY(wallWorldY);
+
+        // Focal point (where chief ray crosses axis after lens)
+        const focalDist = optics.mirrorToLens + optics.f;
+        const focalWorldX = focalDist * Math.cos(reflAngle) * 0.6;
+        const focalWorldY = state.phoneMirrorDist + focalDist * Math.sin(reflAngle) * 0.6;
+
+        const perpAngle = reflAngle + Math.PI / 2;
+
+        const allRayPaths = [];
+        const envelopePoints = [];
+
+        for (let i = 0; i < N; i++) {
+            const t = N === 1 ? 0 : (i / (N - 1) - 0.5) * 2; // -1 to 1
+            const phoneX = t * state.screenWidth / 2;
+            const phoneY = 0;
+
+            // Color: marginal=red, chief=yellow, intermediate=gradient
+            const absT = Math.abs(t);
+            let rayColor;
+            if (absT > 0.95) rayColor = '#ff1744';
+            else if (absT < 0.05) rayColor = '#ffd600';
+            else {
+                const blend = absT;
+                const r = Math.round(255 * blend + 255 * (1 - blend));
+                const g = Math.round(23 * blend + 214 * (1 - blend));
+                const b = Math.round(68 * blend + 0 * (1 - blend));
+                rayColor = `rgb(${r},${g},${b})`;
+            }
+
+            // Fan of 5 rays per source point spanning the lens aperture
+            const fanCount = 5;
+            for (let fi = 0; fi < fanCount; fi++) {
+                const ft = fanCount === 1 ? 0 : (fi / (fanCount - 1) - 0.5) * 2; // -1 to 1
+                const targetLensPos = ft * halfAp * 0.9; // position on lens aperture
+
+                // === Segment 1: Phone to Mirror (vertical) ===
+                const p1x = T.toCanvasX(phoneX);
+                const p1y = T.toCanvasY(phoneY);
+
+                // Ray travels upward to mirror plane
+                // Mirror is at y = phoneMirrorDist, tilted at angle theta
+                // Mirror surface: y = phoneMirrorDist + x * tan(theta-pi/2) for intersection
+                // Actually, the mirror surface is a line through (0, phoneMirrorDist) at angle theta from horizontal
+                // Parametrically: point on mirror = (s*cos(theta), phoneMirrorDist + s*sin(theta)) for parameter s
+                // Vertical ray from (phoneX, 0) going up: x=phoneX, y=t for t increasing
+                // Intersection: phoneX = s*cos(theta), so s = phoneX/cos(theta)
+                // mirrorY = phoneMirrorDist + phoneX*sin(theta)/cos(theta) = phoneMirrorDist + phoneX*tan(theta)
+
+                const mirrorHitY = state.phoneMirrorDist + phoneX * Math.tan(theta);
+                const p2x = T.toCanvasX(phoneX);
+                const p2y = T.toCanvasY(mirrorHitY);
+
+                // === Segment 2: Mirror reflection to Lens ===
+                // Incoming direction: (0, 1) (straight up)
+                // Mirror normal (pointing toward incoming ray):
+                // Surface direction: (cos(theta), sin(theta))
+                // Normal: perpendicular = (sin(theta), -cos(theta)) or (-sin(theta), cos(theta))
+                // We want normal pointing "downward" toward the incoming ray: (sin(theta), -cos(theta))
+                const nx = Math.sin(theta);
+                const ny = -Math.cos(theta);
+
+                // Reflect: r = d - 2(d·n)n where d = (0, 1)
+                const dot = 0 * nx + 1 * ny; // = -cos(theta)
+                const rx = 0 - 2 * dot * nx; // = 2*cos(theta)*sin(theta) = sin(2*theta)
+                const ry = 1 - 2 * dot * ny; // = 1 - 2*cos²(theta) = -cos(2*theta)
+                // Normalize
+                const rLen = Math.sqrt(rx * rx + ry * ry);
+                const rdx = rx / rLen;
+                const rdy = ry / rLen;
+
+                // We need the ray to reach a specific point on the lens aperture
+                // Lens center is at world coords (lensWorldX, lensWorldY)
+                // Target point on lens: offset along perpendicular to beam by targetLensPos
+                const lensTargetX = lensWorldX + Math.cos(perpAngle + Math.PI / 2) * 0 + Math.cos(perpAngle) * targetLensPos;
+                const lensTargetY = lensWorldY + Math.sin(perpAngle) * targetLensPos;
+
+                // Actually, the ray from mirror goes in reflected direction
+                // But we want it to aim at the lens target point for the fan
+                // The fan determines which part of the lens each ray hits
+                // So ray direction from mirror to target lens point:
+                const toLensX = lensTargetX - phoneX;
+                const toLensY = lensTargetY - mirrorHitY;
+                const toLensLen = Math.sqrt(toLensX * toLensX + toLensY * toLensY);
+
+                const p3x = T.toCanvasX(lensTargetX);
+                const p3y = T.toCanvasY(lensTargetY);
+
+                // === Segment 3: Through lens to wall/focus ===
+                // Apply Snell's law at lens surfaces
+                // For the biconvex lens, front surface is convex toward the incoming ray
+                // R1 = R (positive, center of curvature on the far side)
+                // At the lens entry point, compute surface normal
+
+                // Surface normal at entry point on front surface of biconvex lens
+                // Front surface: circle centered at (lensWorldX + R, lensWorldY) for beam along x
+                // Actually aligned with beam direction
+                const R = optics.R;
+                const beamDirX = Math.cos(reflAngle);
+                const beamDirY = Math.sin(reflAngle);
+
+                // Center of curvature for front surface (convex facing left/toward mirror)
+                // Center is to the RIGHT (toward wall) of the front surface
+                const frontSurfCenterX = lensWorldX + beamDirX * (R - optics.sag);
+                const frontSurfCenterY = lensWorldY + beamDirY * (R - optics.sag);
+
+                // Normal at entry point = direction from center of curvature to point, pointing outward (toward mirror)
+                const normalToEntryX = lensTargetX - frontSurfCenterX;
+                const normalToEntryY = lensTargetY - frontSurfCenterY;
+                const normalLen = Math.sqrt(normalToEntryX ** 2 + normalToEntryY ** 2);
+                const snNx = normalToEntryX / (normalLen || 1);
+                const snNy = normalToEntryY / (normalLen || 1);
+
+                // Snell's law: incoming ray direction
+                const inDirX = toLensX / (toLensLen || 1);
+                const inDirY = toLensY / (toLensLen || 1);
+
+                // Compute refracted direction using Snell's law vectorially
+                const n1 = 1.0; // air
+                const n2 = state.glassN;
+                const cosI = -(snNx * inDirX + snNy * inDirY);
+                const sinI2 = 1 - cosI * cosI;
+                const ratio = n1 / n2;
+                const cosT = Math.sqrt(Math.max(0, 1 - ratio * ratio * sinI2));
+                const refractX = ratio * inDirX + (ratio * cosI - cosT) * snNx;
+                const refractY = ratio * inDirY + (ratio * cosI - cosT) * snNy;
+
+                // After exiting back surface, refract again (n2 -> n1)
+                // Second surface normal points outward (toward wall)
+                const backSurfCenterX = lensWorldX - beamDirX * (R - optics.sag);
+                const backSurfCenterY = lensWorldY - beamDirY * (R - optics.sag);
+
+                // Exit point approximately
+                const exitX = lensTargetX + beamDirX * optics.centerThick * 0.8;
+                const exitY = lensTargetY + beamDirY * optics.centerThick * 0.8;
+
+                const normalToExitX = exitX - backSurfCenterX;
+                const normalToExitY = exitY - backSurfCenterY;
+                const normalExLen = Math.sqrt(normalToExitX ** 2 + normalToExitY ** 2);
+                const snN2x = normalToExitX / (normalExLen || 1);
+                const snN2y = normalToExitY / (normalExLen || 1);
+
+                const cosI2 = -(snN2x * refractX + snN2y * refractY);
+                const sinI2_2 = 1 - cosI2 * cosI2;
+                const ratio2 = n2 / n1;
+                const cosT2 = Math.sqrt(Math.max(0, 1 - ratio2 * ratio2 * sinI2_2));
+                const exitDirX = ratio2 * refractX + (ratio2 * cosI2 - cosT2) * snN2x;
+                const exitDirY = ratio2 * refractY + (ratio2 * cosI2 - cosT2) * snN2y;
+
+                // Converge rays toward image plane (wall)
+                // Use the exit direction to project to wall distance
+                const exitCx = T.toCanvasX(exitX);
+                const exitCy = T.toCanvasY(exitY);
+
+                // Project ray from exit in exitDir direction
+                // Find the t parameter where ray hits the wall x-position
+                const rayLen = 300; // canvas pixels
+                const p4x = exitCx + exitDirX * rayLen * T.scale * 0.5;
+                const p4y = exitCy - exitDirY * rayLen * T.scale * 0.5;
+
+                // Converge toward wall center area with proper optics
+                const convergeFactor = t * optics.M;
+                const convTargetX = wallCx;
+                const convTargetY = wallCy + convergeFactor * T.scale * 15;
+
+                // Blend between physical ray and convergence target
+                const finalX = p4x * 0.3 + convTargetX * 0.7;
+                const finalY = p4y * 0.3 + convTargetY * 0.7;
+
+                // Draw the ray
+                const alpha = fi === 2 ? 0.9 : 0.5; // chief fan ray brighter
+                ctx.strokeStyle = rayColor;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth = fi === 2 ? 1.8 : 1;
+
+                // Segment 1: Phone to mirror
+                ctx.beginPath();
+                ctx.moveTo(p1x, p1y);
+                ctx.lineTo(p2x, p2y);
+                ctx.stroke();
+
+                // Segment 2: Mirror to lens
+                ctx.beginPath();
+                ctx.moveTo(p2x, p2y);
+                ctx.lineTo(p3x, p3y);
+                ctx.stroke();
+
+                // Segment 3: Lens to wall
+                ctx.beginPath();
+                ctx.moveTo(p3x, p3y);
+                ctx.lineTo(finalX, finalY);
+                ctx.stroke();
+
+                ctx.globalAlpha = 1;
+
+                allRayPaths.push({ p1x, p1y, p2x, p2y, p3x, p3y, finalX, finalY, t, fi, rayColor });
+
+                if (fi === 0 || fi === fanCount - 1) {
+                    envelopePoints.push({ x: p3x, y: p3y, fx: finalX, fy: finalY, side: fi === 0 ? 'top' : 'bottom' });
+                }
+
+                // === Snell vectors ===
+                if (state.showSnell && fi === 2) {
+                    const arrowLen = 20;
+                    // Entry surface normal
+                    ctx.strokeStyle = '#00e676';
+                    ctx.lineWidth = 1.5;
+                    ctx.setLineDash([2, 2]);
+                    ctx.beginPath();
+                    ctx.moveTo(p3x, p3y);
+                    ctx.lineTo(p3x + snNx * arrowLen, p3y - snNy * arrowLen);
+                    ctx.stroke();
+                    // Refracted direction
+                    ctx.strokeStyle = '#7c4dff';
+                    ctx.beginPath();
+                    ctx.moveTo(p3x, p3y);
+                    ctx.lineTo(p3x + refractX * arrowLen, p3y - refractY * arrowLen);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Angle arcs
+                    if (Math.abs(t) < 0.1) {
+                        ctx.fillStyle = 'rgba(0,230,118,0.6)';
+                        ctx.font = '9px "JetBrains Mono"';
+                        const angleI = Math.acos(Math.abs(cosI)) * 180 / Math.PI;
+                        const angleR = Math.acos(Math.abs(cosT)) * 180 / Math.PI;
+                        ctx.fillText(`θi=${angleI.toFixed(1)}°`, p3x + 24, p3y - 8);
+                        ctx.fillStyle = 'rgba(124,77,255,0.6)';
+                        ctx.fillText(`θr=${angleR.toFixed(1)}°`, p3x + 24, p3y + 6);
+                    }
+                }
+
+                // === Parallax arrows ===
+                if (state.showParallax && fi === 2 && Math.abs(t) > 0.2) {
+                    const prlxLen = Math.abs(t) * 12;
+                    const prlxAngle = Math.atan2(toLensY, toLensX);
+                    ctx.strokeStyle = '#ff9100';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(p3x, p3y);
+                    const arrEndX = p3x + Math.cos(prlxAngle) * prlxLen;
+                    const arrEndY = p3y - Math.sin(prlxAngle) * prlxLen;
+                    ctx.lineTo(arrEndX, arrEndY);
+                    ctx.stroke();
+                    // Arrowhead
+                    drawArrowhead(ctx, p3x, p3y, arrEndX, arrEndY, 5, '#ff9100');
+                }
+            }
+        }
+
+        // === Ray Envelope ===
+        if (state.showEnvelope && envelopePoints.length >= 4) {
+            const topPts = envelopePoints.filter(p => p.side === 'top').sort((a, b) => a.x - b.x);
+            const botPts = envelopePoints.filter(p => p.side === 'bottom').sort((a, b) => a.x - b.x);
+
+            if (topPts.length >= 2 && botPts.length >= 2) {
+                ctx.beginPath();
+                ctx.moveTo(topPts[0].x, topPts[0].y);
+                for (const p of topPts) ctx.lineTo(p.x, p.y);
+                // to wall convergence
+                const lastTop = topPts[topPts.length - 1];
+                ctx.lineTo(lastTop.fx, lastTop.fy);
+                // back along bottom
+                const lastBot = botPts[botPts.length - 1];
+                ctx.lineTo(lastBot.fx, lastBot.fy);
+                for (let i = botPts.length - 1; i >= 0; i--) ctx.lineTo(botPts[i].x, botPts[i].y);
+                ctx.closePath();
+
+                const envGrad = ctx.createLinearGradient(topPts[0].x, topPts[0].y, lastTop.fx, lastTop.fy);
+                envGrad.addColorStop(0, 'rgba(26,115,232,0.08)');
+                envGrad.addColorStop(0.5, 'rgba(124,77,255,0.12)');
+                envGrad.addColorStop(1, 'rgba(124,77,255,0.04)');
+                ctx.fillStyle = envGrad;
+                ctx.fill();
+            }
+        }
+
+        // Focal spot indicator
+        const focalScreenX = wallCx;
+        const focalScreenY = wallCy;
+        const focalGlow = ctx.createRadialGradient(focalScreenX, focalScreenY, 0, focalScreenX, focalScreenY, 15);
+        focalGlow.addColorStop(0, 'rgba(255,214,0,0.6)');
+        focalGlow.addColorStop(0.5, 'rgba(255,214,0,0.15)');
+        focalGlow.addColorStop(1, 'rgba(255,214,0,0)');
+        ctx.fillStyle = focalGlow;
+        ctx.beginPath();
+        ctx.arc(focalScreenX, focalScreenY, 15, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffd600';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        ctx.fillText('focal spot', focalScreenX, focalScreenY + 24);
+    }
+
+    function drawArrowhead(ctx, fromX, fromY, toX, toY, size, color) {
+        const angle = Math.atan2(toY - fromY, toX - fromX);
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(toX, toY);
+        ctx.lineTo(toX - size * Math.cos(angle - Math.PI / 6), toY - size * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(toX - size * Math.cos(angle + Math.PI / 6), toY - size * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function drawAnnotations(T, optics) {
+        const reflAngle = (2 * state.mirrorAngle - 90) * Math.PI / 180;
+
+        // Dimension: Phone to Mirror (vertical)
+        const dimX = T.toCanvasX(-state.screenWidth / 2 - 30);
+        const dimY1 = T.toCanvasY(0);
+        const dimY2 = T.toCanvasY(state.phoneMirrorDist);
+        drawDimension(dimX, dimY1, dimX, dimY2, `${state.phoneMirrorDist}mm`, 'left');
+
+        // Dimension: Mirror to Lens (horizontal-ish)
+        const mCx = T.toCanvasX(0);
+        const mCy = T.toCanvasY(state.phoneMirrorDist);
+        const lCx = T.toCanvasX(optics.mirrorToLens * Math.cos(reflAngle));
+        const lCy = T.toCanvasY(state.phoneMirrorDist + optics.mirrorToLens * Math.sin(reflAngle));
+        const dimOffset = 25;
+        drawDimension(mCx, mCy + dimOffset, lCx, lCy + dimOffset, `${optics.mirrorToLens.toFixed(0)}mm`, 'below');
+
+        // Dimension: Lens to Wall
+        const totalDist = optics.mirrorToLens + state.lensWallDist * 0.28;
+        const wCx = T.toCanvasX(totalDist * Math.cos(reflAngle));
+        const wCy = T.toCanvasY(state.phoneMirrorDist + totalDist * Math.sin(reflAngle));
+        drawDimension(lCx, lCy + dimOffset, wCx, wCy + dimOffset, `${state.lensWallDist}mm`, 'below');
+
+        // Beam footprint boxes
+        // Phone footprint
+        const pfx1 = T.toCanvasX(-state.screenWidth / 2);
+        const pfx2 = T.toCanvasX(state.screenWidth / 2);
+        const pfy = T.toCanvasY(0);
+        ctx.strokeStyle = 'rgba(0,229,255,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(pfx1, pfy - 4, pfx2 - pfx1, 8);
+        ctx.setLineDash([]);
+    }
+
+    function drawDimension(x1, y1, x2, y2, label, align) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = 1;
+
+        // Main line
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        // End ticks
+        const tickSize = 5;
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        const perpA = angle + Math.PI / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(x1 + Math.cos(perpA) * tickSize, y1 + Math.sin(perpA) * tickSize);
+        ctx.lineTo(x1 - Math.cos(perpA) * tickSize, y1 - Math.sin(perpA) * tickSize);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x2 + Math.cos(perpA) * tickSize, y2 + Math.sin(perpA) * tickSize);
+        ctx.lineTo(x2 - Math.cos(perpA) * tickSize, y2 - Math.sin(perpA) * tickSize);
+        ctx.stroke();
+
+        // Arrowheads
+        drawArrowhead(ctx, x1, y1, x1 + Math.cos(angle) * 8, y1 + Math.sin(angle) * 8, 4, 'rgba(255,255,255,0.25)');
+        drawArrowhead(ctx, x2, y2, x2 - Math.cos(angle) * 8, y2 - Math.sin(angle) * 8, 4, 'rgba(255,255,255,0.25)');
+
+        // Label
+        const midX = (x1 + x2) / 2;
+        const midY = (y1 + y2) / 2;
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.textAlign = 'center';
+        const offsetY = align === 'below' ? 14 : (align === 'left' ? 0 : -8);
+        const offsetX = align === 'left' ? -12 : 0;
+        ctx.save();
+        if (align === 'left') {
+            ctx.translate(midX + offsetX, midY);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(label, 0, 0);
+        } else {
+            ctx.fillText(label, midX + offsetX, midY + offsetY);
+        }
+        ctx.restore();
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+        ctx.lineTo(x + w, y + h - r);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        ctx.lineTo(x + r, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+        ctx.lineTo(x, y + r);
+        ctx.quadraticCurveTo(x, y, x + r, y);
+        ctx.closePath();
+    }
+
+    // ===== READOUTS =====
+    function updateReadouts(optics) {
+        document.getElementById('ro-mag').textContent = optics.M.toFixed(2) + '×';
+        document.getElementById('ro-do').textContent = optics.d_o.toFixed(0) + ' mm';
+        document.getElementById('ro-f').textContent = optics.f.toFixed(1) + ' mm';
+        document.getElementById('ro-aperture').textContent = optics.aperture.toFixed(1) + ' mm';
+        document.getElementById('ro-R').textContent = optics.R.toFixed(1) + ' mm';
+        document.getElementById('ro-t').textContent = optics.centerThick.toFixed(1) + ' mm';
+        document.getElementById('ro-fnum').textContent = 'f/' + optics.fNumber.toFixed(2);
+        document.getElementById('ro-mirror').textContent =
+            optics.mirrorLen.toFixed(0) + ' × ' + optics.mirrorW.toFixed(0) + ' mm';
+        document.getElementById('ro-wall').textContent =
+            optics.wallImageW.toFixed(0) + ' × ' + optics.wallImageH.toFixed(0) + ' mm';
+        document.getElementById('ro-ml').textContent = optics.mirrorToLens.toFixed(0) + ' mm';
+    }
+
+    // ===== SLIDER BINDINGS =====
+    const sliders = [
+        { id: 'sl-mirror-angle', key: 'mirrorAngle', display: 'vd-mirror-angle', suffix: '°', decimals: 1 },
+        { id: 'sl-phone-mirror', key: 'phoneMirrorDist', display: 'vd-phone-mirror', suffix: 'mm', decimals: 0 },
+        { id: 'sl-lens-wall', key: 'lensWallDist', display: 'vd-lens-wall', suffix: 'mm', decimals: 0 },
+        { id: 'sl-screen-width', key: 'screenWidth', display: 'vd-screen-width', suffix: 'mm', decimals: 2 },
+        { id: 'sl-glass-n', key: 'glassN', display: 'vd-glass-n', suffix: '', decimals: 2 },
+        { id: 'sl-ray-bundles', key: 'rayBundles', display: 'vd-ray-bundles', suffix: '', decimals: 0 },
+    ];
+
+    sliders.forEach(s => {
+        const el = document.getElementById(s.id);
+        el.addEventListener('input', () => {
+            state[s.key] = parseFloat(el.value);
+            document.getElementById(s.display).textContent =
+                parseFloat(el.value).toFixed(s.decimals) + s.suffix;
+            // Deactivate presets
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            requestAnimationFrame(draw);
+        });
+    });
+
+    // ===== PRESETS =====
+    const presets = {
+        'preset-mini': { screenWidth: 97.7, label: 'mini (5.42")' },
+        'preset-standard': { screenWidth: 114.67, label: 'Standard (6.06")' },
+        'preset-promax': { screenWidth: 126.4, label: 'Pro Max (6.68")' },
+    };
+
+    Object.keys(presets).forEach(id => {
+        document.getElementById(id).addEventListener('click', () => {
+            document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            state.screenWidth = presets[id].screenWidth;
+            document.getElementById('sl-screen-width').value = state.screenWidth;
+            document.getElementById('vd-screen-width').textContent = state.screenWidth.toFixed(2) + 'mm';
+            requestAnimationFrame(draw);
+        });
+    });
+
+    // ===== TOGGLES =====
+    document.getElementById('tog-envelope').addEventListener('click', function () {
+        state.showEnvelope = !state.showEnvelope;
+        this.classList.toggle('active');
+        requestAnimationFrame(draw);
+    });
+    document.getElementById('tog-snell').addEventListener('click', function () {
+        state.showSnell = !state.showSnell;
+        this.classList.toggle('active');
+        requestAnimationFrame(draw);
+    });
+    document.getElementById('tog-parallax').addEventListener('click', function () {
+        state.showParallax = !state.showParallax;
+        this.classList.toggle('active');
+        requestAnimationFrame(draw);
+    });
+
+    // ===== RESET =====
+    document.getElementById('btn-reset').addEventListener('click', () => {
+        state.mirrorAngle = 45;
+        state.phoneMirrorDist = 160;
+        state.lensWallDist = 1000;
+        state.screenWidth = 114.67;
+        state.glassN = 1.52;
+        state.rayBundles = 5;
+        state.showEnvelope = true;
+        state.showSnell = false;
+        state.showParallax = false;
+
+        sliders.forEach(s => {
+            document.getElementById(s.id).value = state[s.key];
+            document.getElementById(s.display).textContent =
+                state[s.key].toFixed(s.decimals) + s.suffix;
+        });
+
+        document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('preset-standard').classList.add('active');
+
+        document.getElementById('tog-envelope').classList.add('active');
+        document.getElementById('tog-snell').classList.remove('active');
+        document.getElementById('tog-parallax').classList.remove('active');
+
+        requestAnimationFrame(draw);
+    });
+
+    // ===== SPEC POPUP ON CLICK =====
+    const popup = document.getElementById('spec-popup');
+    const popupTitle = document.getElementById('popup-title');
+    const popupContent = document.getElementById('popup-content');
+
+    document.getElementById('popup-close').addEventListener('click', () => {
+        popup.classList.remove('show');
+    });
+
+    canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        const optics = computeOptics();
+        const T = getTransform(optics);
+        const reflAngle = (2 * state.mirrorAngle - 90) * Math.PI / 180;
+
+        // Check phone region
+        const phoneCx = T.toCanvasX(0);
+        const phoneCy = T.toCanvasY(0);
+        if (Math.abs(mx - phoneCx) < state.screenWidth * T.scale / 2 + 20 && Math.abs(my - phoneCy) < 30) {
+            showPopup(e.clientX, e.clientY, 'PHONE SCREEN', [
+                ['Screen Width', state.screenWidth.toFixed(2) + ' mm'],
+                ['Screen Height', (state.screenWidth * 9 / 16).toFixed(2) + ' mm'],
+                ['Diagonal', optics.screenDiag.toFixed(1) + ' mm'],
+                ['Aspect Ratio', '16:9'],
+                ['Content Area', (state.screenWidth * state.screenWidth * 9 / 16).toFixed(0) + ' mm²'],
+            ]);
+            return;
+        }
+
+        // Check mirror region
+        const mirrorCx = T.toCanvasX(0);
+        const mirrorCy = T.toCanvasY(state.phoneMirrorDist);
+        if (Math.abs(mx - mirrorCx) < optics.mirrorLen * T.scale / 2 + 20 && Math.abs(my - mirrorCy) < 30) {
+            showPopup(e.clientX, e.clientY, 'MIRROR', [
+                ['Angle θ', state.mirrorAngle.toFixed(1) + '°'],
+                ['Length', optics.mirrorLen.toFixed(1) + ' mm'],
+                ['Reflection Angle', ((2 * state.mirrorAngle - 90).toFixed(1)) + '° from horiz'],
+                ['Beam Coverage', optics.beamW.toFixed(1) + ' mm'],
+                ['Surface', 'First-surface aluminum'],
+            ]);
+            return;
+        }
+
+        // Check lens region
+        const lensCx = T.toCanvasX(optics.mirrorToLens * Math.cos(reflAngle));
+        const lensCy = T.toCanvasY(state.phoneMirrorDist + optics.mirrorToLens * Math.sin(reflAngle));
+        if (Math.abs(mx - lensCx) < 30 && Math.abs(my - lensCy) < optics.aperture * T.scale / 2 + 15) {
+            showPopup(e.clientX, e.clientY, 'BICONVEX LENS', [
+                ['Focal Length f', optics.f.toFixed(1) + ' mm'],
+                ['Aperture Ø', optics.aperture.toFixed(1) + ' mm'],
+                ['Radius R₁=R₂', optics.R.toFixed(1) + ' mm'],
+                ['Center Thickness', optics.centerThick.toFixed(1) + ' mm'],
+                ['Edge Thickness', optics.edgeThick.toFixed(1) + ' mm'],
+                ['Glass Index n', state.glassN.toFixed(2) + ' (BK7)'],
+                ['f-number', 'f/' + optics.fNumber.toFixed(2)],
+                ['Sagitta', optics.sag.toFixed(2) + ' mm'],
+            ]);
+            return;
+        }
+
+        popup.classList.remove('show');
+    });
+
+    function showPopup(cx, cy, title, rows) {
+        popupTitle.textContent = title;
+        popupContent.innerHTML = rows.map(([lbl, val]) =>
+            `<div class="row"><span class="lbl">${lbl}</span><span class="val">${val}</span></div>`
+        ).join('');
+        popup.style.left = Math.min(cx + 10, window.innerWidth - 250) + 'px';
+        popup.style.top = Math.min(cy + 10, window.innerHeight - 250) + 'px';
+        popup.classList.add('show');
+    }
+
+    // Close popup on outside click
+    document.addEventListener('click', (e) => {
+        if (!popup.contains(e.target) && e.target !== canvas) {
+            popup.classList.remove('show');
+        }
+    });
+
+    // ===== ANIMATION LOOP for smooth transitions =====
+    let animationId = null;
+    let prevValues = {};
+    let targetValues = {};
+    let animStart = 0;
+    const ANIM_DURATION = 300;
+
+    function smoothUpdate() {
+        // For now, direct rendering on slider input (above)
+        // The slider 'input' events call draw() directly
+    }
+
+    // ===== INIT =====
+    setTimeout(() => {
+        resizeCanvas();
+        if (typeof lucide !== "undefined" && typeof lucide.createIcons === "function") {
+            lucide.createIcons();
+        }
+    }, 100);
+    </script>
+</body>
+</html>
